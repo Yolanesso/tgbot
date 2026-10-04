@@ -11,25 +11,20 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 from telegram.constants import ParseMode
 import database as db
 
-# Загружаем переменные окружения из .env файла
 load_dotenv()
 
-# Установка UTF-8 для Windows
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 
-# Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Состояния пользователей для FSM
 user_states: Dict[int, Dict] = {}
 
-# ID владельца бота (загружается из .env файла)
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))  # Если не установлен в .env, будет 0 (отключено)
 
 
@@ -86,12 +81,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     state = user_states.get(user_id, {})
 
-    # Установка часового пояса
     if text == "⏰ Установить часовой пояс":
         await show_timezone_selection(update, context)
         return
 
-    # Напоминания
     if text == "🔔 Напоминания":
         await update.message.reply_text(
             "🔔 Управление напоминаниями",
@@ -99,7 +92,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Задачи
     if text == "📝 Задачи":
         await update.message.reply_text(
             "📝 Управление задачами",
@@ -107,7 +99,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Поддержать автора
     if text == "💝 Поддержать автора":
         await update.message.reply_text(
             "💝 Спасибо за поддержку!\n\n"
@@ -123,7 +114,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Наш канал
     if text == "📢 Наш канал":
         await update.message.reply_text(
             "📢 <b>Наш канал</b>\n\n"
@@ -134,7 +124,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Обработка состояний
     if state.get("action") == "reminder_text":
         user_states[user_id]["reminder_text"] = text
         user_states[user_id]["action"] = "reminder_date"
@@ -164,19 +153,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reminder_date = user_states[user_id]["reminder_date"]
             reminder_datetime = datetime.combine(reminder_date.date(), time_obj)
             
-            # Получаем часовой пояс пользователя
             user_tz = await db.get_user_timezone(user_id)
             tz = pytz.timezone(user_tz)
             
-            # Локализуем время в часовом поясе пользователя
             local_dt = tz.localize(reminder_datetime)
             utc_dt = local_dt.astimezone(pytz.UTC)
             
-            # Сохраняем напоминание
             reminder_text = user_states[user_id]["reminder_text"]
             await db.create_reminder(user_id, reminder_text, utc_dt)
             
-            # Очищаем состояние
             user_states[user_id] = {}
             
             await update.message.reply_text(
@@ -286,7 +271,6 @@ async def show_reminders_menu(query, user_id: int):
     tz = pytz.timezone(user_tz)
     now = datetime.now(pytz.UTC).astimezone(tz)
     
-    # Разделяем напоминания на прошедшие и будущие
     future_reminders = []
     past_reminders = []
     
@@ -304,11 +288,9 @@ async def show_reminders_menu(query, user_id: int):
         else:
             past_reminders.append(reminder_data)
     
-    # Сортируем: будущие по возрастанию времени, прошедшие по убыванию
     future_reminders.sort(key=lambda x: x["local_time"])
     past_reminders.sort(key=lambda x: x["local_time"], reverse=True)
     
-    # Формируем текст
     text = "🔔 <b>Ваши напоминания</b>\n\n"
     
     if future_reminders:
@@ -327,15 +309,12 @@ async def show_reminders_menu(query, user_id: int):
             text += f"   ... и ещё {len(past_reminders) - 5}\n"
         text += "\n"
     
-    # Статистика
     total = len(reminders)
     future = len(future_reminders)
     text += f"📊 <i>Всего: {total} | Предстоящих: {future}</i>"
     
-    # Формируем клавиатуру
     keyboard = []
     
-    # Кнопки для будущих напоминаний (компактно)
     for reminder in future_reminders:
         time_str = reminder["local_time"].strftime('%d.%m %H:%M')
         reminder_short = reminder['text'][:20] + "..." if len(reminder['text']) > 20 else reminder['text']
@@ -344,15 +323,13 @@ async def show_reminders_menu(query, user_id: int):
             InlineKeyboardButton("🗑", callback_data=f"reminder_delete_{reminder['id']}")
         ])
     
-    # Кнопки для прошедших напоминаний (только удаление)
     if past_reminders:
-        for reminder in past_reminders[:3]:  # Показываем кнопки только для последних 3
+        for reminder in past_reminders[:3]: 
             reminder_short = reminder['text'][:20] + "..." if len(reminder['text']) > 20 else reminder['text']
             keyboard.append([
                 InlineKeyboardButton(f"🗑 {reminder_short}", callback_data=f"reminder_delete_{reminder['id']}")
             ])
     
-    # Дополнительные кнопки
     if past_reminders:
         keyboard.append([
             InlineKeyboardButton("🗑 Удалить все прошедшие", callback_data="reminder_delete_past")
@@ -385,10 +362,7 @@ async def show_tasks_menu(query, user_id: int):
             ])
         )
         return
-    
-    # Разделяем задачи на выполненные и невыполненные
-    # В SQLite completed хранится как INTEGER (0 или 1)
-    # Но может возвращаться как строка или bool, поэтому нормализуем
+
     def is_completed(task):
         completed = task.get("completed", 0)
         if isinstance(completed, bool):
@@ -401,7 +375,6 @@ async def show_tasks_menu(query, user_id: int):
     active_tasks = [t for t in tasks if not is_completed(t)]
     completed_tasks = [t for t in tasks if is_completed(t)]
     
-    # Формируем текст
     text = "📋 <b>Ваши задачи</b>\n\n"
     
     if active_tasks:
@@ -416,19 +389,14 @@ async def show_tasks_menu(query, user_id: int):
             text += f"✅ <s>{task['text']}</s>\n"
         text += "\n"
     
-    # Отладочная информация (можно убрать после проверки)
-    # text += f"\n<i>Отладка: активных={len(active_tasks)}, выполненных={len(completed_tasks)}</i>"
     
-    # Статистика
     total = len(tasks)
     completed = len(completed_tasks)
     progress = int((completed / total * 100)) if total > 0 else 0
     text += f"📊 <i>Прогресс: {completed}/{total} ({progress}%)</i>"
     
-    # Формируем клавиатуру
     keyboard = []
     
-    # Кнопки для активных задач (компактно)
     for task in active_tasks:
         task_short = task['text'][:25] + "..." if len(task['text']) > 25 else task['text']
         keyboard.append([
@@ -437,7 +405,6 @@ async def show_tasks_menu(query, user_id: int):
             InlineKeyboardButton("🗑", callback_data=f"task_delete_{task['id']}")
         ])
     
-    # Кнопки для выполненных задач (только удаление)
     if completed_tasks:
         for task in completed_tasks:
             task_short = task['text'][:25] + "..." if len(task['text']) > 25 else task['text']
@@ -446,7 +413,6 @@ async def show_tasks_menu(query, user_id: int):
                 InlineKeyboardButton("🗑", callback_data=f"task_delete_{task['id']}")
             ])
     
-    # Дополнительные кнопки
     if completed_tasks:
         keyboard.append([
             InlineKeyboardButton("🗑 Удалить все выполненные", callback_data="task_delete_completed")
@@ -467,7 +433,6 @@ async def show_tasks_menu(query, user_id: int):
 
 async def show_timezone_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать выбор часового пояса"""
-    # Часовые пояса России
     timezones = [
         ("Калининград (UTC+2)", "Europe/Kaliningrad"),
         ("Москва (UTC+3)", "Europe/Moscow"),
@@ -502,7 +467,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     data = query.data
 
-    # Назад в главное меню
     if data == "back_main":
         await query.edit_message_text(
             "Главное меню",
@@ -515,7 +479,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Установка часового пояса
     if data.startswith("tz_"):
         timezone = data[3:]
         await db.set_user_timezone(user_id, timezone)
@@ -529,7 +492,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Напоминания
     if data == "reminder_create":
         user_states[user_id] = {"action": "reminder_text"}
         await query.edit_message_text(
@@ -555,7 +517,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("reminder_delete_"):
         reminder_id_str = data.split("_")[2]
         
-        # Проверяем, не является ли это запросом на удаление всех прошедших
         if reminder_id_str == "past":
             reminders = await db.get_user_reminders(user_id)
             user_tz = await db.get_user_timezone(user_id)
@@ -583,7 +544,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_reminders_menu(query, user_id)
         return
 
-    # Задачи
     if data == "task_create":
         user_states[user_id] = {"action": "task_text"}
         await query.edit_message_text(
@@ -606,8 +566,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ВАЖНО: проверка task_delete_completed должна быть ПЕРЕД task_delete_
-    # иначе "task_delete_completed" попадет в startswith("task_delete_")
     if data == "task_delete_completed":
         try:
             await query.answer("⏳ Удаляю выполненные задачи...", show_alert=False)
@@ -615,12 +573,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tasks = await db.get_user_tasks(user_id)
             deleted_count = 0
             completed_task_ids = []
-            
-            # Собираем ID выполненных задач
-            # Проверяем разные варианты: 1, "1", True
+
             for task in tasks:
                 completed = task.get("completed", 0)
-                # Преобразуем в int для надежности
                 if isinstance(completed, bool):
                     completed = 1 if completed else 0
                 elif isinstance(completed, str):
@@ -633,7 +588,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             logger.info(f"Найдено выполненных задач для удаления: {len(completed_task_ids)}")
             
-            # Удаляем выполненные задачи
             for task_id in completed_task_ids:
                 try:
                     await db.delete_task(user_id, task_id)
@@ -646,7 +600,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await query.answer("ℹ️ Нет выполненных задач для удаления", show_alert=False)
             
-            # Обновляем меню
             await show_tasks_menu(query, user_id)
         except Exception as e:
             logger.error(f"Ошибка при удалении выполненных задач: {e}", exc_info=True)
@@ -676,7 +629,6 @@ async def check_reminders(application: Application):
         user_id = reminder["user_id"]
         reminder_text = reminder["text"]
         
-        # Получаем часовой пояс пользователя для отображения
         user_tz = await db.get_user_timezone(user_id)
         tz = pytz.timezone(user_tz)
         utc_dt = datetime.fromisoformat(reminder["reminder_time"])
@@ -693,7 +645,6 @@ async def check_reminders(application: Application):
                 chat_id=user_id,
                 text=message
             )
-            # Удаляем отправленное напоминание
             await db.delete_sent_reminder(reminder["id"])
         except Exception as e:
             logger.error(f"Ошибка при отправке напоминания: {e}")
@@ -703,7 +654,6 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /stats для просмотра аналитики (только для владельца)"""
     user_id = update.effective_user.id
     
-    # Проверка прав доступа
     if OWNER_ID == 0:
         await update.message.reply_text(
             "⚠️ Аналитика не настроена. Установите переменную окружения OWNER_ID."
@@ -717,7 +667,6 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     try:
-        # Получаем статистику
         total_users = await db.get_total_users()
         active_today = await db.get_active_users_today()
         active_week = await db.get_active_users_week()
@@ -730,10 +679,8 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         top_users = await db.get_top_active_users(limit=5)
         daily_stats = await db.get_daily_stats(days=7)
         
-        # Формируем сообщение со статистикой
         text = "📊 <b>Аналитика бота</b>\n\n"
         
-        # Статистика пользователей
         text += "👥 <b>Пользователи:</b>\n"
         text += f"   Всего: {total_users}\n"
         text += f"   Активных сегодня: {active_today}\n"
@@ -743,7 +690,6 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"   Новых за неделю: {new_users_stats['week']}\n"
         text += f"   Новых за месяц: {new_users_stats['month']}\n\n"
         
-        # Статистика задач
         text += "📝 <b>Задачи:</b>\n"
         text += f"   Всего: {tasks_stats['total']}\n"
         text += f"   Выполнено: {tasks_stats['completed']}\n"
@@ -753,13 +699,11 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += f"   Процент выполнения: {completion_rate}%\n"
         text += "\n"
         
-        # Статистика напоминаний
         text += "🔔 <b>Напоминания:</b>\n"
         text += f"   Всего: {reminders_stats['total']}\n"
         text += f"   Будущих: {reminders_stats['future']}\n"
         text += f"   Прошедших: {reminders_stats['past']}\n\n"
         
-        # Топ активных пользователей
         if top_users:
             text += "🏆 <b>Топ-5 активных пользователей:</b>\n"
             for i, user in enumerate(top_users, 1):
@@ -770,7 +714,6 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text += f"   {i}. ID: {user_id_stat} | Задач: {tasks_count} | Напоминаний: {reminders_count} | Всего: {total_activity}\n"
             text += "\n"
         
-        # Статистика за последние 7 дней
         text += "📈 <b>Активность за последние 7 дней:</b>\n"
         for day_stat in daily_stats:
             date_str = datetime.strptime(day_stat['date'], '%Y-%m-%d').strftime('%d.%m')
@@ -792,7 +735,6 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Главная функция"""
-    # Получаем токен из .env файла
     TOKEN = os.getenv("BOT_TOKEN")
     
     if not TOKEN:
@@ -804,37 +746,31 @@ def main():
         print("Получите токен у @BotFather в Telegram")
         return
     
-    # Инициализация базы данных
     asyncio.run(db.init_db())
     
-    # Создание приложения
     application = Application.builder().token(TOKEN).build()
     
-    # Регистрация обработчиков
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Запуск проверки напоминаний в фоне
     async def reminder_checker_task():
         """Фоновая задача для проверки напоминаний"""
-        await asyncio.sleep(10)  # Начальная задержка
+        await asyncio.sleep(10) 
         while True:
             try:
                 await check_reminders(application)
             except Exception as e:
                 logger.error(f"Ошибка в задаче проверки напоминаний: {e}")
-            await asyncio.sleep(60)  # Проверяем каждую минуту
+            await asyncio.sleep(60)  
     
-    # Запускаем фоновую задачу через post_init
     async def post_init(app: Application) -> None:
         """Инициализация после запуска бота"""
         asyncio.create_task(reminder_checker_task())
     
     application.post_init = post_init
     
-    # Запуск бота
     print("🤖 Бот запущен!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
